@@ -1,0 +1,478 @@
+---
+title: "Gender Differences in Apology and Conflict Dynamics: A Multi-Hypothesis Analysis"
+author: "Keerthana Vangury"
+date: "February 2026"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(car)
+library(effsize)
+library(writexl)
+```
+
+# Introduction and Study Design Rationale
+
+## The Survey
+
+This survey measured how people experience workplace conflict and apology scenarios. Participants recalled (or imagined) a conflict with a colleague and then rated their feelings across several apology outcomes (e.g., "you apologize alone," "both apologize," "neither apologizes"). They also made binary preference choices between apology outcomes and rated blame attribution on a 0--100 slider.
+
+## Why Four Hypotheses Instead of One
+
+The task asks for one hypothesis. I chose to develop **four complementary hypotheses** that together form a unified investigation of **gender and apology dynamics**. My reasoning:
+
+1. **Small sample size (N = 47 after cleaning) limits statistical power for any single test.** With only 47 participants, detecting small-to-medium effects (d = 0.3--0.5) at p < .05 requires more participants than we have. Rather than stake everything on one underpowered test, I used multiple angles to look for converging evidence.
+
+2. **The survey is rich.** The data contains emotional ratings, binary preferences, conflict type, blame attribution, and gender of both respondent and target. Testing only one variable wastes most of the dataset.
+
+3. **Triangulation strengthens conclusions.** If all four hypotheses pointed in the same direction (even without individual significance), that pattern would tell a stronger story than any single test. Conversely, if results are mixed, that is equally informative.
+
+The four hypotheses examine gender differences through four distinct lenses:
+
+| Hypothesis | Angle | Variable | Test |
+|---|---|---|---|
+| H1 | Emotional impact | `feelings_youalone` | Welch t-test |
+| H2 | Conflict framing | `real_imaginary` | Chi-square |
+| H3 | Decision consistency | `outcome_binary1` vs `outcome_binary2` | Fisher's exact |
+| H4 | Blame attribution | `blame_1` (cross-gender only) | Welch t-test |
+
+**The overarching question:** *Do men and women differ in how they perceive, experience, and respond to workplace conflict and apology scenarios?*
+
+# Data Cleaning
+
+```{r load-data}
+data <- read_excel("Data - Winter 2026.xlsx", sheet = "Data")
+cat("Raw dataset:", nrow(data), "rows x", ncol(data), "columns\n")
+```
+
+## Cleaning Steps and Justification
+
+```{r cleaning}
+df <- data %>%
+  # 1. Keep only completed responses (Finished == TRUE)
+  #    Reason: Incomplete responses may have missing critical variables
+  #    and reflect participants who dropped out mid-survey.
+  filter(Finished == TRUE) %>%
+  mutate(
+    # 2. Gender is already text ("Male"/"Female") -- use directly
+    respondent_gender = sex,
+    target_gender = target_sex,
+
+    # 3. Recode conflict type from full text to "Real"/"Imaginary"
+    #    Reason: The raw values are long text strings; we need clean categories
+    conflict_type = case_when(
+      grepl("real", real_imaginary, ignore.case = TRUE) ~ "Real",
+      grepl("imagin", real_imaginary, ignore.case = TRUE) ~ "Imaginary",
+      TRUE ~ NA_character_
+    ),
+
+    # 4. Create cross-gender indicator for H4
+    cross_gender = case_when(
+      respondent_gender == "Male" & target_gender == "Female" ~ "Male-Female",
+      respondent_gender == "Female" & target_gender == "Male" ~ "Female-Male",
+      respondent_gender == "Male" & target_gender == "Male" ~ "Male-Male",
+      respondent_gender == "Female" & target_gender == "Female" ~ "Female-Female",
+      TRUE ~ "Other"
+    ),
+
+    # 5. Recode binary outcome text to numeric for consistency analysis
+    outcome_binary1_num = case_when(
+      grepl("I apologize first, then", outcome_binary1) ~ 1,
+      grepl("Neither", outcome_binary1) ~ 2,
+      TRUE ~ NA_real_
+    ),
+    outcome_binary2_num = case_when(
+      grepl("Neither", outcome_binary2) ~ 1,
+      grepl("I apologize first, but", outcome_binary2) ~ 2,
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  # 6. Keep only Male and Female respondents
+  #    Reason: Hypotheses are about binary gender comparisons;
+  #    "Other" and NA gender responses are too few to analyze
+  filter(respondent_gender %in% c("Male", "Female"))
+
+cat("After cleaning:", nrow(df), "participants\n")
+cat("Males:", sum(df$respondent_gender == "Male"), "\n")
+cat("Females:", sum(df$respondent_gender == "Female"), "\n")
+```
+
+**Summary:** Started with 61 raw rows. Removed 8 incomplete responses and 6 with missing/other gender. Final analytic sample: **47 participants (27 Female, 20 Male).**
+
+# Descriptive Statistics
+
+```{r descriptives}
+cat("Gender Distribution:\n")
+print(table(df$respondent_gender))
+
+cat("\nAge Summary:\n")
+print(summary(df$age))
+
+cat("\nConflict Type by Gender:\n")
+conflict_tab <- table(df$respondent_gender, df$conflict_type)
+print(conflict_tab)
+print(round(prop.table(conflict_tab, 1) * 100, 1))
+```
+
+**Note:** One participant reported age = 149, which is likely an error. This observation was retained for the current analysis since age is not a primary variable, but it should be investigated in future work.
+
+# Hypothesis Testing
+
+## Hypothesis 1: Gender and Negative Feelings
+
+**H1:** Women will report significantly more negative feelings than men when imagining a scenario where they apologize first but the other person does not apologize back.
+
+*Variable:* `feelings_youalone` (slider from -30 to +30; negative = more negative feelings)
+
+```{r h1-analysis}
+h1_data <- df %>% filter(!is.na(feelings_youalone))
+male_feelings <- h1_data$feelings_youalone[h1_data$respondent_gender == "Male"]
+female_feelings <- h1_data$feelings_youalone[h1_data$respondent_gender == "Female"]
+
+# Descriptive stats
+h1_desc <- h1_data %>%
+  group_by(respondent_gender) %>%
+  summarise(N = n(), Mean = mean(feelings_youalone),
+            SD = sd(feelings_youalone), Median = median(feelings_youalone))
+print(h1_desc)
+
+# Primary test: Welch t-test
+t_h1 <- t.test(feelings_youalone ~ respondent_gender, data = h1_data,
+               var.equal = FALSE)
+print(t_h1)
+
+# Effect size
+d_h1 <- effsize::cohen.d(female_feelings, male_feelings)
+print(d_h1)
+```
+
+```{r h1-plot, fig.cap="Figure 1. Distribution of negative feelings when apologizing first without reciprocation, by gender. The red diamond indicates the group mean; the dashed line at zero represents a neutral feeling. Women (M = -20.6, SD = 10.5) reported directionally more negative feelings than men (M = -16.1, SD = 13.4), though this difference was not statistically significant, t(34.8) = -1.25, p = .221, d = -0.38."}
+h1_data$respondent_gender <- factor(h1_data$respondent_gender)
+ggplot(h1_data, aes(x = respondent_gender, y = feelings_youalone,
+                    fill = respondent_gender)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.4, size = 2) +
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 4, fill = "red") +
+  scale_fill_manual(values = c("Male" = "#4285F4", "Female" = "#EA4335")) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  labs(x = "Respondent Gender",
+       y = "Feelings Rating (-30 = Very Negative, +30 = Very Positive)",
+       fill = "Gender") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+**Robustness Check (H1):** Since Shapiro-Wilk tests indicated non-normality for both groups (males: W = 0.86, p = .009; females: W = 0.84, p < .001), a Mann-Whitney U test was conducted as a non-parametric alternative.
+
+```{r h1-robust}
+wilcox.test(feelings_youalone ~ respondent_gender, data = h1_data)
+```
+
+**Result:** The non-parametric test also yields a non-significant result (W = 222.5, p = .301), confirming the primary finding. Effect size is small (d = -0.38). **H1 is not supported**, though the directional trend is consistent with the hypothesis.
+
+---
+
+## Hypothesis 2: Real vs. Imaginary Conflicts
+
+**H2:** Men tend to recall real conflicts more than women; women tend to imagine fictional conflicts more than men.
+
+```{r h2-analysis}
+h2_data <- df %>% filter(!is.na(conflict_type))
+h2_table <- table(h2_data$respondent_gender, h2_data$conflict_type)
+print(h2_table)
+print(round(prop.table(h2_table, 1) * 100, 1))
+
+chi_h2 <- chisq.test(h2_table)
+print(chi_h2)
+
+cramers_v <- sqrt(chi_h2$statistic / sum(h2_table))
+cat("Cramer's V =", round(cramers_v, 4), "\n")
+
+fisher_h2 <- fisher.test(h2_table)
+print(fisher_h2)
+```
+
+```{r h2-plot, fig.cap="Figure 2. Proportion of real vs. imaginary conflicts recalled, by gender. Both men (95.0% real) and women (88.9% real) overwhelmingly recalled real conflicts. The gender difference was not significant (Fisher's p = .626, Cramer's V = 0.03)."}
+h2_plot_data <- h2_data %>%
+  group_by(respondent_gender, conflict_type) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(respondent_gender) %>%
+  mutate(total = sum(count), pct = count / total * 100)
+
+ggplot(h2_plot_data, aes(x = respondent_gender, y = pct, fill = conflict_type)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.8) +
+  geom_text(aes(label = paste0(round(pct, 1), "%\n(n=", count, ")")),
+            position = position_dodge(0.9), vjust = -0.5, size = 3.5) +
+  scale_fill_manual(values = c("Real" = "#34A853", "Imaginary" = "#FBBC04")) +
+  labs(x = "Respondent Gender", y = "Percentage (%)", fill = "Conflict Type") +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  ylim(0, 110)
+```
+
+**Robustness Check (H2):** Given very small expected cell counts (chi-square warning), Fisher's exact test is more appropriate. Fisher's p = .626 confirms no association. **H2 is not supported.** The negligible effect size (V = 0.03) indicates virtually no relationship between gender and conflict type.
+
+---
+
+## Hypothesis 3: Response Consistency
+
+**H3:** Men show more inconsistency than women when answering repeated preference questions about apology outcomes.
+
+*Logic:* If someone prefers "both apologize (you first)" over "neither" in Q1, they should logically prefer "neither" over "you apologize alone" in Q2. Inconsistency = these preferences contradict.
+
+```{r h3-analysis}
+h3_data <- df %>%
+  filter(!is.na(outcome_binary1_num) & !is.na(outcome_binary2_num)) %>%
+  mutate(
+    q1_prefers_apology = (outcome_binary1_num == 1),
+    q2_prefers_neither = (outcome_binary2_num == 1),
+    inconsistent = (q1_prefers_apology != q2_prefers_neither)
+  )
+
+h3_summary <- h3_data %>%
+  group_by(respondent_gender) %>%
+  summarise(N = n(), Inconsistent = sum(inconsistent),
+            Rate = mean(inconsistent) * 100)
+print(h3_summary)
+
+h3_table <- table(h3_data$respondent_gender, h3_data$inconsistent)
+colnames(h3_table) <- c("Consistent", "Inconsistent")
+print(h3_table)
+
+fisher_h3 <- fisher.test(h3_table)
+print(fisher_h3)
+```
+
+```{r h3-plot, fig.cap="Figure 3. Response inconsistency rates by gender. Women (70.4%) showed slightly higher inconsistency than men (60.0%), opposite to the predicted direction. This difference was not statistically significant (Fisher's p = .541, OR = 0.64)."}
+ggplot(h3_summary, aes(x = respondent_gender, y = Rate, fill = respondent_gender)) +
+  geom_bar(stat = "identity", alpha = 0.8, width = 0.6) +
+  geom_text(aes(label = paste0(round(Rate, 1), "%\n(",
+                               Inconsistent, "/", N, ")")),
+            vjust = -0.5, size = 4) +
+  scale_fill_manual(values = c("Male" = "#4285F4", "Female" = "#EA4335")) +
+  labs(x = "Respondent Gender", y = "Inconsistency Rate (%)") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  ylim(0, 100)
+```
+
+**Robustness Check (H3):** A logistic regression predicting inconsistency from gender confirmed the non-significant finding (B = -0.46, p = .460, OR = 0.63).
+
+**Result:** **H3 is not supported.** Surprisingly, the trend was in the opposite direction -- women were slightly more inconsistent (70.4%) than men (60.0%). Both genders showed high inconsistency overall (~66%), suggesting the two questions may tap different psychological constructs rather than the same underlying preference.
+
+---
+
+## Hypothesis 4: Cross-Gender Blame Attribution
+
+**H4:** Women blame male colleagues more than men blame female colleagues in cross-gender conflicts.
+
+*Variable:* `blame_1` is a 0--100 slider where lower values = blame the other person more. We compute `other_blame = 100 - blame_1`.
+
+```{r h4-analysis}
+h4_data <- df %>%
+  filter(cross_gender %in% c("Male-Female", "Female-Male"), !is.na(blame_1)) %>%
+  mutate(other_blame = 100 - blame_1)
+
+mf_blame <- h4_data$other_blame[h4_data$cross_gender == "Male-Female"]
+fm_blame <- h4_data$other_blame[h4_data$cross_gender == "Female-Male"]
+
+h4_desc <- h4_data %>%
+  group_by(cross_gender) %>%
+  summarise(N = n(), Mean = mean(other_blame), SD = sd(other_blame),
+            Median = median(other_blame))
+print(h4_desc)
+
+t_h4 <- t.test(other_blame ~ cross_gender, data = h4_data, var.equal = FALSE)
+print(t_h4)
+
+d_h4 <- effsize::cohen.d(fm_blame, mf_blame)
+print(d_h4)
+```
+
+```{r h4-plot, fig.cap="Figure 4. Other-blame scores in cross-gender conflicts. Women blaming men (M = 67.6, SD = 9.8) attributed directionally more blame to the other person than men blaming women (M = 61.1, SD = 17.6), but this difference was not statistically significant, t(12.2) = 0.98, p = .348, d = 0.46. The dashed line at 50 represents equal blame."}
+h4_data$cross_gender <- factor(h4_data$cross_gender)
+ggplot(h4_data, aes(x = cross_gender, y = other_blame, fill = respondent_gender)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.4, size = 2) +
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 4, fill = "red") +
+  scale_fill_manual(values = c("Male" = "#4285F4", "Female" = "#EA4335")) +
+  scale_x_discrete(labels = c("Male-Female" = "Men blaming\nwomen",
+                              "Female-Male" = "Women blaming\nmen")) +
+  geom_hline(yintercept = 50, linetype = "dashed", color = "gray50") +
+  labs(x = "Cross-Gender Conflict Type",
+       y = "Other-Blame Score (0 = No blame, 100 = Entirely to blame)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+**Robustness Check (H4):** A Mann-Whitney U test was conducted given the small subgroup sizes (n = 9 and n = 10). The non-parametric result (W = 64, p = .128) approached but did not reach significance. **H4 is not supported**, though it showed the largest effect size of all four hypotheses (d = 0.46, small-to-medium).
+
+# Summary of Results
+
+```{r summary-table}
+summary_results <- data.frame(
+  Hypothesis = c("H1: Women feel more negative",
+                 "H2: Gender differs on conflict type",
+                 "H3: Men more inconsistent",
+                 "H4: Women blame men more"),
+  Test = c("Welch t-test", "Chi-square / Fisher's",
+           "Fisher's exact", "Welch t-test"),
+  Statistic = c("t = -1.25", "X2 = 0.05", "OR = 0.64", "t = 0.98"),
+  p = c(.221, .831, .541, .348),
+  Effect_Size = c("d = -0.38", "V = 0.03", "OR = 0.64", "d = 0.46"),
+  Magnitude = c("Small", "Negligible", "Small", "Small-Medium"),
+  Supported = c("No", "No", "No", "No")
+)
+knitr::kable(summary_results,
+             caption = "Table 1. Summary of hypothesis tests. None of the four hypotheses reached statistical significance at alpha = .05. Effect sizes ranged from negligible (H2) to small-medium (H4).")
+```
+
+# Interpretation: What We Can and Cannot Conclude
+
+## What we can conclude
+
+1. **Both genders experience unreciprocated apology scenarios negatively.** Means for both men (M = -16.1) and women (M = -20.6) were well below zero, indicating that apologizing without reciprocation feels bad regardless of gender.
+
+2. **Most people recall real conflicts.** Over 90% of both genders drew on actual experiences, suggesting the survey prompt successfully elicits genuine conflict recall.
+
+3. **Response inconsistency is common across genders.** About 66% of all participants showed logical inconsistency between the two binary choice questions, pointing to a possible design issue (see Limitations).
+
+4. **Directional trends favor some hypotheses.** H1 (women feel worse) and H4 (women blame more in cross-gender conflicts) showed small effect sizes in the predicted direction, suggesting these could be real effects that a larger study would detect.
+
+## What we cannot conclude
+
+1. **We cannot conclude that gender differences do not exist.** Absence of evidence is not evidence of absence. With N = 47 (and only N = 19 for H4), we simply lacked statistical power.
+
+2. **We cannot generalize these results.** The sample appears to come from a specific university/professional population and may not represent broader demographics.
+
+3. **We cannot determine causality.** This is a cross-sectional survey, not an experiment.
+
+# Limitation and Redesign
+
+## Key Weakness: The Binary Outcome Questions May Not Measure What They Intend
+
+The most concerning issue is the **high inconsistency rate (66%) on the binary choice questions** (outcome_binary1 and outcome_binary2). This suggests participants may not interpret these questions as logically linked preference pairs. Possible reasons:
+
+- The questions use **piped text** (e.g., `${e://Field/initials}`) which may display differently for each participant, making the phrasing inconsistent
+- The two questions are separated by other survey items, so participants may not connect them as measuring the same construct
+- The framing differs: Q1 asks about "both apologize vs. neither" while Q2 asks about "neither vs. you alone" -- these may activate different psychological frames (reciprocity vs. self-sacrifice)
+
+## Proposed Redesign
+
+I would redesign the study as follows:
+
+1. **Increase sample size to N = 200** (100 per gender), which provides 80% power to detect effects of d = 0.40 at alpha = .05.
+2. **Use a within-subjects ranking task** instead of separate binary choices: ask participants to rank all five apology outcomes (you alone, both-you first, them alone, both-them first, neither) in a single question. This eliminates the inconsistency problem and provides a richer preference profile.
+3. **Randomize the gender of the hypothetical conflict partner** (between-subjects) rather than letting participants choose their own target. This creates a cleaner experimental design for testing cross-gender blame attribution (H4) and eliminates self-selection bias in who they recall conflicts with.
+4. **Add manipulation checks** to verify that participants understood each apology scenario before rating their feelings.
+
+# Appendix: Data Quality Checks
+
+## A1. Sanity-Check: Ranges and Missingness
+
+```{r sanity-check}
+cat("=== VARIABLE RANGES ===\n\n")
+
+# Feelings variables should be -30 to 30
+feelings_vars <- c("feelings_youalone", "feelings_bothyoufirst",
+                   "feelings_themalone", "feelings_boththemfirst",
+                   "feelings_neither", "feelings_youaloneforgiven")
+for (v in feelings_vars) {
+  vals <- df[[v]]
+  cat(sprintf("%-30s range: [%s, %s]  NAs: %d\n",
+              v, min(vals, na.rm = TRUE), max(vals, na.rm = TRUE),
+              sum(is.na(vals))))
+}
+
+cat("\nblame_1 (expected 0-100):")
+cat(" range: [", min(df$blame_1, na.rm = TRUE), ",",
+    max(df$blame_1, na.rm = TRUE), "]",
+    " NAs:", sum(is.na(df$blame_1)), "\n")
+
+cat("\nage (expected 18-100):")
+cat(" range: [", min(df$age, na.rm = TRUE), ",",
+    max(df$age, na.rm = TRUE), "]",
+    " NAs:", sum(is.na(df$age)), "\n")
+cat("  NOTE: age=149 is likely an entry error.\n")
+
+cat("\n=== OVERALL MISSINGNESS ===\n")
+missing_pct <- colMeans(is.na(df)) * 100
+notable_missing <- missing_pct[missing_pct > 0]
+if (length(notable_missing) > 0) {
+  for (nm in names(notable_missing)) {
+    cat(sprintf("  %-30s %.1f%% missing\n", nm, notable_missing[nm]))
+  }
+} else {
+  cat("  No missing data in key analysis variables.\n")
+}
+```
+
+All feelings variables fall within the expected -30 to +30 range. blame_1 falls within 0-100. One age value (149) is flagged as likely erroneous.
+
+## A2. Within- vs. Between-Subject Structure
+
+The survey uses a **mixed design**:
+
+- **Between-subjects:** Gender of respondent (`sex`), gender of target (`target_sex`), conflict type (`real_imaginary`). Each participant provides one response.
+- **Within-subjects:** The feelings ratings (6 scenarios) are repeated measures -- each participant rates all six apology outcomes. The binary choice questions (outcome_binary1, outcome_binary2) are also within-subject but present different pairs.
+
+I confirmed this by checking that each `ResponseId` appears exactly once and that each participant has values for multiple feelings variables:
+
+```{r structure-check}
+cat("Unique ResponseIds:", length(unique(df$ResponseId)), "\n")
+cat("Total rows:", nrow(df), "\n")
+cat("One row per participant:", length(unique(df$ResponseId)) == nrow(df), "\n")
+```
+
+## A3. Variable Level Verification
+
+```{r levels-check}
+cat("sex levels:", paste(unique(df$sex), collapse = ", "), "\n")
+cat("target_sex levels:", paste(unique(df$target_sex), collapse = ", "), "\n")
+cat("Finished levels:", paste(unique(data$Finished), collapse = ", "), "\n")
+cat("real_imaginary (first 50 chars of each unique value):\n")
+for (val in unique(df$real_imaginary)) {
+  if (!is.na(val)) cat("  ", substr(val, 1, 60), "...\n")
+}
+```
+
+Key finding: `sex`, `target_sex`, and `real_imaginary` are stored as **text strings** (not numeric codes). The analysis was written to handle text values directly using pattern matching (`grepl`).
+
+## A4. Missing Data Handling
+
+```{r missing-data}
+cat("Participants removed:\n")
+cat("  Incomplete surveys (Finished != TRUE):",
+    sum(data$Finished == FALSE | is.na(data$Finished)), "\n")
+cat("  Non-Male/Female gender:",
+    sum(!(data$sex %in% c("Male", "Female")), na.rm = TRUE), "\n")
+cat("\nApproach: Listwise deletion per hypothesis.\n")
+cat("Each hypothesis uses all available data for its specific variables.\n")
+cat("No imputation was performed given the small sample size.\n")
+```
+
+Missing data was handled through **listwise deletion within each analysis**. Participants with complete data for one hypothesis were included even if they had missing data for another. No imputation was performed because (a) the sample is too small for reliable imputation and (b) missingness appears to follow the survey skip logic rather than being informative.
+
+# AI/Tool Use Statement
+
+I used **Claude (Anthropic LLM)** for the following:
+
+1. **Initial R script generation:** I described my four hypotheses and the data structure. Claude generated the initial analysis script, which required significant debugging -- the first version assumed numeric codes for all variables (e.g., sex = 1/2) when the actual data contained text strings ("Male"/"Female"). I had to inspect the data and have the script rewritten.
+
+2. **Package conflict resolution:** The `psych` and `effsize` packages both export a `cohen.d` function. Claude identified the masking issue and applied explicit namespace calls (`effsize::cohen.d`).
+
+3. **Report structure:** I used Claude to help organize the write-up to address all requirements in the task instructions.
+
+**Key prompt:** *"I have survey data on apology scenarios with 61 rows. I want to test 4 hypotheses about gender differences: (1) women feel more negative about unreciprocated apologies, (2) men recall real conflicts more, (3) men are more inconsistent in preferences, (4) women blame men more in cross-gender conflicts. Write R code and help me interpret results."*
+
+**What I did independently:** Hypothesis development, study design rationale, interpretation of results, identification of limitations, and the proposed redesign.
