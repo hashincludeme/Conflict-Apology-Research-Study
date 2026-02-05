@@ -1,13 +1,8 @@
-# ===============================================================================
 # Research Project: Apology and Conflict Study Analysis
 # Author: Keerthana
 # Date: February 2026
-# ===============================================================================
-# This script tests 4 hypotheses about gender differences in apology scenarios
-# ===============================================================================
 
-# STEP 1: Install and load required packages
-# ===============================================================================
+# Install and load required packages
 cat("\n=== STEP 1: Installing and Loading Packages ===\n")
 
 # List of required packages
@@ -39,8 +34,8 @@ invisible(lapply(required_packages, library, character.only = TRUE))
 cat("All packages loaded successfully!\n\n")
 
 
-# STEP 2: Load and examine the data
-# ===============================================================================
+# Load and examine the data
+
 cat("=== STEP 2: Loading Data ===\n")
 
 # Set file path
@@ -56,8 +51,8 @@ cat("Data loaded successfully!\n")
 cat("Dataset dimensions:", nrow(data), "rows x", ncol(data), "columns\n\n")
 
 
-# STEP 3: Data cleaning and preparation
-# ===============================================================================
+# Data cleaning and preparation
+
 cat("=== STEP 3: Data Cleaning ===\n")
 
 # Create clean dataset
@@ -110,8 +105,8 @@ cat("Males:", sum(df$respondent_gender == "Male"), "\n")
 cat("Females:", sum(df$respondent_gender == "Female"), "\n\n")
 
 
-# STEP 4: Descriptive Statistics
-# ===============================================================================
+# Descriptive Statistics
+
 cat("=== STEP 4: Descriptive Statistics ===\n\n")
 
 # Overall demographics
@@ -131,7 +126,6 @@ print(prop.table(conflict_table, margin = 1))
 cat("\n\n")
 
 
-# ===============================================================================
 # HYPOTHESIS 1: Gender and Negative Feelings
 # ===============================================================================
 # H1: Women will report significantly more negative feelings than men
@@ -247,7 +241,6 @@ ggsave("H1_gender_feelings_plot.png", h1_plot,
 cat("H1 analysis complete!\n\n")
 
 
-# ===============================================================================
 # HYPOTHESIS 2: Real vs Imaginary Conflicts
 # ===============================================================================
 # H2: Men tend to recall real conflicts more than women;
@@ -335,8 +328,6 @@ ggsave("H2_conflict_type_plot.png", h2_plot,
 
 cat("H2 analysis complete!\n\n")
 
-
-# ===============================================================================
 # HYPOTHESIS 3: Response Consistency
 # ===============================================================================
 # H3: Men show more inconsistency than women when answering repeated
@@ -452,7 +443,6 @@ ggsave("H3_consistency_plot.png", h3_plot,
 cat("H3 analysis complete!\n\n")
 
 
-# ===============================================================================
 # HYPOTHESIS 4: Cross-Gender Blame Attribution
 # ===============================================================================
 # H4: Women blame male colleagues more than men blame female colleagues
@@ -589,8 +579,6 @@ ggsave("H4_blame_attribution_plot.png", h4_plot,
 
 cat("H4 analysis complete!\n\n")
 
-
-# ===============================================================================
 # SUMMARY OF RESULTS
 # ===============================================================================
 
